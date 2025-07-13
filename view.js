@@ -304,6 +304,7 @@ export class View extends HTMLElement {
         this.history.clear()
         this.tts = null
         this.mediaOverlay = null
+        this.#emit('close')
     }
     goToTextStart() {
         return this.goTo(this.book.landmarks
