@@ -111,6 +111,7 @@ class Reader {
         this.view.addEventListener('relocate', this.#onRelocate.bind(this))
 
         const { book } = this.view
+        console.log(book)
         book.transformTarget?.addEventListener('data', ({ detail }) => {
             detail.data = Promise.resolve(detail.data).catch(e => {
                 console.error(new Error(`Failed to load ${detail.name}`, { cause: e }))
@@ -189,12 +190,13 @@ class Reader {
     #handleKeydown(event) {
         const k = event.key
         if (k === 'ArrowLeft' || k === 'h') this.view.goLeft()
-        else if(k === 'ArrowRight' || k === 'l') this.view.goRight()
+        else if (k === 'ArrowRight' || k === 'l') this.view.goRight()
     }
     #onLoad({ detail: { doc } }) {
         doc.addEventListener('keydown', this.#handleKeydown.bind(this))
     }
     #onRelocate({ detail }) {
+        console.log("on relocate", detail)
         const { fraction, location, tocItem, pageItem } = detail
         const percent = percentFormat.format(fraction)
         const loc = pageItem
@@ -232,6 +234,62 @@ dropTarget.addEventListener('dragover', dragOverHandler)
 $('#file-input').addEventListener('change', e =>
     open(e.target.files[0]).catch(e => console.error(e)))
 $('#file-button').addEventListener('click', () => $('#file-input').click())
+
+$('#read-online').addEventListener('click', async () => {
+    try {
+        const files = await fetch('http://localhost:4000/book')
+        const response = await files.json()
+        const streamLoader = makeStreamLoader(response)
+        const { EPUB } = await import('./epub.js')
+        const book = await new EPUB(streamLoader).init()
+        open(book)
+    } catch (error) {
+        alert(console.error(error))
+    }
+})
+
+/**
+ * @param {Array<{ name: string; path: string, parentPath: string; relativePath: string; type: "file"; size: number }>} files 
+ */
+const makeStreamLoader = (files) => {
+    const fileCache = new Map()
+    const filesEntriesMap = new Map(files.map(f => {
+        const entry = f.relativePath + '/' + f.name
+        const fetchUrl = `http://localhost:4000${f.path}`
+        return [entry, { ...f, fetchUrl }]
+    }))
+
+    const loadText = async (entry) => {
+        if (!filesEntriesMap.has(entry)) return null
+
+        if (fileCache.has(entry)) return fileCache.get(entry)
+
+        const { fetchUrl } = filesEntriesMap.get(entry)
+        const result = fetch(fetchUrl).then(r => r.text())
+        fileCache.set(entry, result)
+        return result
+    }
+
+    const loadBlob = async (entry) => {
+        if (!filesEntriesMap.has(entry)) return null
+
+        if (fileCache.has(entry)) return fileCache.get(entry)
+
+        const { fetchUrl } = filesEntriesMap.get(entry)
+        const result = fetch(fetchUrl).then(r => r.blob())
+        fileCache.set(entry, result)
+
+        return result
+    }
+
+    const getSize = (entry) => {
+        return filesEntriesMap.get(entry)?.size ?? 0
+    }
+
+    return {
+        loadText, loadBlob, getSize
+    }
+}
 
 const params = new URLSearchParams(location.search)
 const url = params.get('url')
