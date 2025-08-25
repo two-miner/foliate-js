@@ -57,7 +57,7 @@ const render = async (page, doc, zoom) => {
     await new pdfjsLib.AnnotationLayer({ page, viewport, div }).render({
         annotations: await page.getAnnotations(),
         linkService: {
-            goToDestination: () => {},
+            goToDestination: () => { },
             getDestinationHash: dest => JSON.stringify(dest),
             addLinkAttributes: (link, url) => link.href = url,
         },
@@ -165,6 +165,83 @@ export const makePDF = async file => {
 
             return document
         },
+        load: async () => {
+            const cached = cache.get(i)
+            if (cached) return cached
+            const url = await renderPage(await pdf.getPage(i + 1))
+            cache.set(i, url)
+            return url
+        },
+        size: 1000,
+    }))
+    book.isExternal = uri => /^\w+:/i.test(uri)
+    book.resolveHref = async href => {
+        const parsed = JSON.parse(href)
+        const dest = typeof parsed === 'string'
+            ? await pdf.getDestination(parsed) : parsed
+        const index = await pdf.getPageIndex(dest[0])
+        return { index }
+    }
+    book.splitTOCHref = async href => {
+        const parsed = JSON.parse(href)
+        const dest = typeof parsed === 'string'
+            ? await pdf.getDestination(parsed) : parsed
+        const index = await pdf.getPageIndex(dest[0])
+        return [index, null]
+    }
+    book.getTOCFragment = doc => doc.documentElement
+    book.getCover = async () => renderPage(await pdf.getPage(1), true)
+    book.destroy = () => pdf.destroy()
+    return book
+}
+
+export const makePDFStream = async url => {
+    const transport = new pdfjsLib.PDFDataRangeTransport(2480755, [])
+    transport.requestDataRange = (begin, end) => {
+        fetch(url, {
+            headers: {
+                "Range": `bytes=${begin}-${end - 1}`,
+                "Accept-Encoding": 'identity'
+            }
+        }).then(response => {
+            if (response.status === 206) { // 206 Partial Content
+                response.arrayBuffer().then(chunk => transport.onDataRange(begin, chunk))
+            } else {
+                throw new Error("Range request not supported or returned full content");
+            }
+        }).catch(console.error)
+    }
+    const pdf = await pdfjsLib.getDocument({
+        range: transport,
+        rangeChunkSize: 32768,
+        cMapUrl: pdfjsPath('cmaps/'),
+        standardFontDataUrl: pdfjsPath('standard_fonts/'),
+        isEvalSupported: false,
+    }).promise
+
+    const book = { rendition: { layout: 'pre-paginated' } }
+
+    const { metadata, info } = await pdf.getMetadata() ?? {}
+    // TODO: for better results, parse `metadata.getRaw()`
+    book.metadata = {
+        title: metadata?.get('dc:title') ?? info?.Title,
+        author: metadata?.get('dc:creator') ?? info?.Author,
+        contributor: metadata?.get('dc:contributor'),
+        description: metadata?.get('dc:description') ?? info?.Subject,
+        language: metadata?.get('dc:language'),
+        publisher: metadata?.get('dc:publisher'),
+        subject: metadata?.get('dc:subject'),
+        identifier: metadata?.get('dc:identifier'),
+        source: metadata?.get('dc:source'),
+        rights: metadata?.get('dc:rights'),
+    }
+
+    const outline = await pdf.getOutline()
+    book.toc = outline?.map(makeTOCItem)
+
+    const cache = new Map()
+    book.sections = Array.from({ length: pdf.numPages }).map((_, i) => ({
+        id: i,
         load: async () => {
             const cached = cache.get(i)
             if (cached) return cached

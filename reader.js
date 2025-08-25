@@ -2,6 +2,7 @@ import './view.js'
 import { createTOCView } from './ui/tree.js'
 import { createMenu } from './ui/menu.js'
 import { Overlayer } from './overlayer.js'
+import { makePDFStream } from './pdf.js'
 
 const getCSS = ({ spacing, justify, hyphenate }) => `
     @namespace epub "http://www.idpf.org/2007/ops";
@@ -189,7 +190,7 @@ class Reader {
     #handleKeydown(event) {
         const k = event.key
         if (k === 'ArrowLeft' || k === 'h') this.view.goLeft()
-        else if(k === 'ArrowRight' || k === 'l') this.view.goRight()
+        else if (k === 'ArrowRight' || k === 'l') this.view.goRight()
     }
     #onLoad({ detail: { doc } }) {
         doc.addEventListener('keydown', this.#handleKeydown.bind(this))
@@ -232,6 +233,10 @@ dropTarget.addEventListener('dragover', dragOverHandler)
 $('#file-input').addEventListener('change', e =>
     open(e.target.files[0]).catch(e => console.error(e)))
 $('#file-button').addEventListener('click', () => $('#file-input').click())
+$("#read-online").addEventListener('click', async () => {
+    const book = await makePDFStream('http://localhost:4000/file/hand-on-programming')
+    open(book)
+})
 
 const params = new URLSearchParams(location.search)
 const url = params.get('url')
