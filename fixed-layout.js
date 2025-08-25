@@ -33,6 +33,7 @@ export class FixedLayout extends HTMLElement {
     static observedAttributes = ['zoom']
     #root = this.attachShadow({ mode: 'closed' })
     #observer = new ResizeObserver(() => this.#render())
+    #overlayer = new WeakMap()
     #spreads
     #index = -1
     defaultViewport
@@ -73,6 +74,9 @@ export class FixedLayout extends HTMLElement {
         const src = srcOptionIsString ? srcOption : srcOption?.src
         const onZoom = srcOptionIsString ? null : srcOption?.onZoom
         const element = document.createElement('div')
+        Object.assign(element.style, {
+            position: 'relative',
+        })
         element.setAttribute('dir', 'ltr')
         const iframe = document.createElement('iframe')
         element.append(iframe)
@@ -86,6 +90,7 @@ export class FixedLayout extends HTMLElement {
         iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts')
         iframe.setAttribute('scrolling', 'no')
         iframe.setAttribute('part', 'filter')
+        iframe.setAttribute('index', index)
         this.#root.append(element)
         if (!src) return { blank: true, element, iframe }
         return new Promise(resolve => {
@@ -94,11 +99,22 @@ export class FixedLayout extends HTMLElement {
                 this.dispatchEvent(new CustomEvent('load', { detail: { doc, index } }))
                 const { width, height } = getViewport(doc, this.defaultViewport)
                 resolve({
+                    index,
                     element, iframe,
                     width: parseFloat(width),
                     height: parseFloat(height),
                     onZoom,
                 })
+                this.dispatchEvent(new CustomEvent('create-overlayer', {
+                    detail: {
+                        doc: iframe.contentDocument,
+                        index,
+                        attach: overlayer => {
+                            this.#overlayer.set(iframe, overlayer)
+                            element.append(overlayer.element)
+                        },
+                    },
+                }))
             }, { once: true })
             iframe.src = src
         })
@@ -135,7 +151,11 @@ export class FixedLayout extends HTMLElement {
         const transform = frame => {
             let { element, iframe, width, height, blank, onZoom } = frame
             if (!iframe) return
-            if (onZoom) onZoom({ doc: frame.iframe.contentDocument, scale })
+            if (onZoom) {
+                onZoom({ doc: frame.iframe.contentDocument, scale }).then(() => {
+                    this.#overlayer.get(iframe).redraw()
+                })
+            }
             const iframeScale = onZoom ? scale : 1
             Object.assign(iframe.style, {
                 width: `${width * iframeScale}px`,
@@ -250,8 +270,10 @@ export class FixedLayout extends HTMLElement {
         return this.book.sections.indexOf(section)
     }
     #reportLocation(reason) {
-        this.dispatchEvent(new CustomEvent('relocate', { detail:
-            { reason, range: null, index: this.index, fraction: 0, size: 1 } }))
+        this.dispatchEvent(new CustomEvent('relocate', {
+            detail:
+                { reason, range: null, index: this.index, fraction: 0, size: 1 }
+        }))
     }
     getSpreadOf(section) {
         const spreads = this.#spreads
@@ -308,7 +330,8 @@ export class FixedLayout extends HTMLElement {
     getContents() {
         return Array.from(this.#root.querySelectorAll('iframe'), frame => ({
             doc: frame.contentDocument,
-            // TODO: index, overlayer
+            index: frame.getAttribute('index') ? parseInt(frame.getAttribute('index')) : - 1,
+            overlayer: this.#overlayer.get(frame),
         }))
     }
     destroy() {

@@ -113,6 +113,7 @@ const makeTOCItem = item => ({
 })
 
 export const makePDF = async file => {
+    const parser = new DOMParser()
     const transport = new pdfjsLib.PDFDataRangeTransport(file.size, [])
     transport.requestDataRange = (begin, end) => {
         file.slice(begin, end).arrayBuffer().then(chunk => {
@@ -147,8 +148,23 @@ export const makePDF = async file => {
     book.toc = outline?.map(makeTOCItem)
 
     const cache = new Map()
+    const documentCache = new Map()
     book.sections = Array.from({ length: pdf.numPages }).map((_, i) => ({
         id: i,
+        createDocument: async () => {
+            const url = cache.get(i) ?? await renderPage(await pdf.getPage(i + 1))
+            const document = documentCache.get(i) ?? await fetch(url.src).then(r => r.text()).then(text => parser.parseFromString(text, 'text/html'))
+
+            if (!cache.has(i)) {
+                cache.set(i, url)
+            }
+            if (!documentCache.has(i)) {
+                documentCache.set(i, document)
+            }
+            await url.onZoom({ doc: document, scale: 1 })
+
+            return document
+        },
         load: async () => {
             const cached = cache.get(i)
             if (cached) return cached
