@@ -34,6 +34,7 @@ export class FixedLayout extends HTMLElement {
     #root = this.attachShadow({ mode: 'closed' })
     #observer = new ResizeObserver(() => this.#render())
     #overlayer = new WeakMap()
+    #container
     #spreads
     #index = -1
     defaultViewport
@@ -47,18 +48,24 @@ export class FixedLayout extends HTMLElement {
     constructor() {
         super()
 
-        const sheet = new CSSStyleSheet()
-        this.#root.adoptedStyleSheets = [sheet]
-        sheet.replaceSync(`:host {
+        this.#root.innerHTML = `<style>
+        :host {
             width: 100%;
             height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
             overflow: auto;
-        }`)
+            display: flex;
+        }
+        #container {
+            display: flex;
+            margin: auto;
+        }
+        </style>
+        <div id="container"></div>
+        `
 
-        this.#observer.observe(this)
+        this.#container = this.#root.getElementById('container')
+
+        this.#observer.observe(this.#container)
     }
     attributeChangedCallback(name, _, value) {
         switch (name) {
@@ -91,7 +98,7 @@ export class FixedLayout extends HTMLElement {
         iframe.setAttribute('scrolling', 'no')
         iframe.setAttribute('part', 'filter')
         iframe.setAttribute('index', index)
-        this.#root.append(element)
+        this.#container.append(element)
         if (!src) return { blank: true, element, iframe }
         return new Promise(resolve => {
             iframe.addEventListener('load', () => {
@@ -184,7 +191,7 @@ export class FixedLayout extends HTMLElement {
         }
     }
     async #showSpread({ left, right, center, side }) {
-        this.#root.replaceChildren()
+        this.#container.replaceChildren()
         this.#left = null
         this.#right = null
         this.#center = null
@@ -328,7 +335,7 @@ export class FixedLayout extends HTMLElement {
         if (!s) return this.goToSpread(this.#index - 1, this.rtl ? 'left' : 'right', 'page')
     }
     getContents() {
-        return Array.from(this.#root.querySelectorAll('iframe'), frame => ({
+        return Array.from(this.#container.querySelectorAll('iframe'), frame => ({
             doc: frame.contentDocument,
             index: frame.getAttribute('index') ? parseInt(frame.getAttribute('index')) : - 1,
             overlayer: this.#overlayer.get(frame),
