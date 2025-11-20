@@ -276,6 +276,9 @@ export class FixedLayout extends HTMLElement {
             ? spread.left ?? spread.right : spread.right ?? spread.left)
         return this.book.sections.indexOf(section)
     }
+    get portrait() {
+        return this.#portrait
+    }
     #reportLocation(reason) {
         this.dispatchEvent(new CustomEvent('relocate', {
             detail:
